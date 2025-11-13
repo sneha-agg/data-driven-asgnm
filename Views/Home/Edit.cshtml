@@ -1,0 +1,184 @@
+@using WebMatrix.Data
+@{
+    Layout = "_Layout";
+    var db = Database.Open("BoardGame");
+
+    // Get game ID from query string
+    var gameId = Request["id"];
+
+    if (String.IsNullOrEmpty(gameId))
+    {
+        <div class="alert alert-danger mt-5 text-center">Invalid game ID.</div>
+        return;
+    }
+
+    // Load existing game details
+    var game = db.QuerySingle("SELECT * FROM BoardGame WHERE BGGId = @0", gameId);
+    if (game == null)
+    {
+        <div class="alert alert-warning mt-5 text-center">No game found for this ID.</div>
+        return;
+    }
+
+    // Load dropdown data
+    var families = db.Query("SELECT FamilyCode, Family FROM GameFamily ORDER BY Family");
+    var themes = db.Query("SELECT ThemeID, ThemeName FROM Theme ORDER BY ThemeName");
+
+    string message = "";
+    bool success = false;
+
+    if (IsPost)
+    {
+        string name = Request["Name"];
+        string description = Request["Description"];
+        int year = Convert.ToInt32(Request["Year"]);
+        int minPlayers = Convert.ToInt32(Request["MinPlayers"]);
+        int maxPlayers = Convert.ToInt32(Request["MaxPlayers"]);
+        int playtime = Convert.ToInt32(Request["Playtime"]);
+        string familyCode = Request["FamilyCode"];
+        string themeId = Request["ThemeID"];
+        string newTheme = Request["NewTheme"];
+        string imagePath = Request["ImagePath"];
+
+        // ---- D LEVEL: Create new Theme if not existing ----
+        if (!String.IsNullOrEmpty(newTheme))
+        {
+            var existingTheme = db.QueryValue("SELECT ThemeID FROM Theme WHERE ThemeName = @0", newTheme);
+            if (existingTheme == null)
+            {
+                string newThemeId = Guid.NewGuid().ToString().Substring(0, 6);
+                db.Execute("INSERT INTO Theme (ThemeID, ThemeName) VALUES (@0, @1)", newThemeId, newTheme);
+                themeId = newThemeId;
+            }
+            else
+            {
+                themeId = existingTheme;
+            }
+
+            // Update link in GameInThemes
+            var themeLink = db.QueryValue("SELECT COUNT(*) FROM GameInThemes WHERE BGGId = @0", gameId);
+            if (themeLink > 0)
+            {
+                db.Execute("UPDATE GameInThemes SET ThemeID = @0 WHERE BGGId = @1", themeId, gameId);
+            }
+            else
+            {
+                db.Execute("INSERT INTO GameInThemes (BGGId, ThemeID) VALUES (@0, @1)", gameId, themeId);
+            }
+        }
+
+        try
+        {
+            db.Execute(@"UPDATE BoardGame 
+                         SET Name = @0, Description = @1, YearPublished = @2, 
+                             MinPlayers = @3, MaxPlayers = @4, MfgPlaytime = @5, 
+                             FamilyCode = @6, ImagePath = @7
+                         WHERE BGGId = @8",
+                         name, description, year, minPlayers, maxPlayers, playtime, familyCode, imagePath, gameId);
+
+            message = "Game details updated successfully!";
+            success = true;
+            game = db.QuerySingle("SELECT * FROM BoardGame WHERE BGGId = @0", gameId); // reload
+        }
+        catch (Exception ex)
+        {
+            message = "Error updating game: " + ex.Message;
+        }
+    }
+}
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Edit Game Details</h2>
+
+    @if (!String.IsNullOrEmpty(message))
+    {
+        <div class="alert @(success ? "alert-success" : "alert-danger")">@message</div>
+    }
+
+    <form method="post" class="needs-validation" novalidate>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Game Name *</label>
+                <input type="text" name="Name" value="@game.Name" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Year Published *</label>
+                <input type="number" name="Year" value="@game.YearPublished" min="1900" max="2100" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Playtime (mins)</label>
+                <input type="number" name="Playtime" value="@game.MfgPlaytime" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Min Players *</label>
+                <input type="number" name="MinPlayers" value="@game.MinPlayers" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Max Players *</label>
+                <input type="number" name="MaxPlayers" value="@game.MaxPlayers" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Game Family</label>
+                <select name="FamilyCode" class="form-select">
+                    <option value="">-- Select Family --</option>
+                    @foreach (var f in families)
+                    {
+                        <option value="@f.FamilyCode" @(f.FamilyCode == game.FamilyCode ? "selected" : "")>@f.Family</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Select Theme</label>
+                <select name="ThemeID" class="form-select">
+                    <option value="">-- Select Theme --</option>
+                    @foreach (var t in themes)
+                    {
+                        <option value="@t.ThemeID">@t.ThemeName</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Or Add New Theme</label>
+                <input type="text" name="NewTheme" class="form-control" placeholder="Enter new theme name">
+            </div>
+
+            <div class="col-md-12">
+                <label class="form-label">Description *</label>
+                <textarea name="Description" rows="4" class="form-control" required>@game.Description</textarea>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Image Path (URL)</label>
+                <input type="text" name="ImagePath" value="@game.ImagePath" class="form-control">
+            </div>
+        </div>
+
+        <div class="mt-4 text-center">
+            <button type="submit" class="btn btn-primary px-4">Update Game</button>
+            <a href="/Home/Details?id=@gameId" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(() => {
+    'use strict'
+    const forms = document.querySelectorAll('.needs-validation')
+    Array.from(forms).forEach(form => {
+        form.addEventListener('submit', event => {
+            if (!form.checkValidity()) {
+                event.preventDefault()
+                event.stopPropagation()
+            }
+            form.classList.add('was-validated')
+        }, false)
+    })
+})()
+</script>

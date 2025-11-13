@@ -1,0 +1,94 @@
+@using WebMatrix.Data
+@{
+    Layout = "_Layout";
+    var db = Database.Open("BoardGame");
+
+    // Get the Game ID from the URL
+    var gameId = Request["id"];
+
+    if (String.IsNullOrEmpty(gameId))
+    {
+        <div class="alert alert-danger mt-5 text-center"> Invalid game ID.</div>
+        return;
+    }
+
+    // Fetch main game details
+    var game = db.QuerySingle("SELECT * FROM BoardGame WHERE BGGId = @0", gameId);
+
+    if (game == null)
+    {
+        <div class="alert alert-warning mt-5 text-center">No game found for the provided ID.</div>
+        return;
+    }
+
+    // Fetch related details
+    var categories = db.Query("SELECT c.Category FROM Category c INNER JOIN GameCategory gc ON c.CategoryID = gc.CategoryID WHERE gc.BGGId = @0", gameId);
+    var themes = db.Query("SELECT t.ThemeName FROM Theme t INNER JOIN GameInThemes gt ON t.ThemeID = gt.ThemeID WHERE gt.BGGId = @0", gameId);
+    var designers = db.Query("SELECT d.DesignerName FROM Designer d INNER JOIN GameDesigner gd ON d.DesignerID = gd.DesignerID WHERE gd.BGGId = @0", gameId);
+    var artists = db.Query("SELECT a.ArtistsName FROM Artists a INNER JOIN GameArtists ga ON a.ArtistID = ga.ArtistID WHERE ga.BGGId = @0", gameId);
+
+    // Fetch ratings
+    var ratingData = db.Query("SELECT AVG(Rating) AS AvgRating, COUNT(*) AS CountRating FROM UserRating WHERE BGGId = @0", gameId).FirstOrDefault();
+    double avgRating = ratingData?.AvgRating ?? 0;
+    int totalRatings = ratingData?.CountRating ?? 0;
+}
+
+<div class="container mt-5">
+    <a href="/Home/Index" class="btn btn-outline-secondary mb-3">← Back to List</a>
+
+    <div class="card shadow-lg">
+        <div class="row g-0">
+            <div class="col-md-5">
+                <img src="@game.ImagePath" class="img-fluid rounded-start" alt="@game.Name" style="height:100%;object-fit:cover;">
+            </div>
+            <div class="col-md-7">
+                <div class="card-body">
+                    <h2 class="card-title">@game.Name</h2>
+                    <p class="text-muted mb-1"><strong>Year:</strong> @game.YearPublished?.ToString("yyyy")</p>
+                    <p class="text-muted mb-1"><strong>Players:</strong> @game.MinPlayers - @game.MaxPlayers</p>
+                    <p class="text-muted mb-3"><strong>Playtime:</strong> @game.MfgPlaytime mins</p>
+
+                    @if (!String.IsNullOrEmpty(game.Description))
+                    {
+                        <p class="card-text mt-3">@game.Description</p>
+                    }
+
+                    <hr />
+
+                    <!-- Display related details if available -->
+                    @if (categories.Any()) {
+                        <p><strong>Category:</strong> @string.Join(", ", categories.Select(c => c.Category))</p>
+                    }
+
+                    @if (themes.Any()) {
+                        <p><strong>Theme:</strong> @string.Join(", ", themes.Select(t => t.ThemeName))</p>
+                    }
+
+                    @if (designers.Any()) {
+                        <p><strong>Designer:</strong> @string.Join(", ", designers.Select(d => d.DesignerName))</p>
+                    }
+
+                    @if (artists.Any()) {
+                        <p><strong>Artist:</strong> @string.Join(", ", artists.Select(a => a.ArtistsName))</p>
+                    }
+
+                    <hr />
+
+                    <!-- Ratings Section -->
+                    <div class="mt-3">
+                        <h5>Ratings</h5>
+                        @if (totalRatings > 0)
+                        {
+                            <p>Average Rating: <strong>@avgRating.ToString("0.0") / 10</strong></p>
+                            <p>Total Reviews: <strong>@totalRatings</strong></p>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No ratings yet for this game.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

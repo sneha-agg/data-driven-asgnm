@@ -1,0 +1,161 @@
+@using WebMatrix.Data
+@{
+    Layout = "_Layout";
+    var db = Database.Open("BoardGame");
+
+    var families = db.Query("SELECT FamilyCode, Family FROM GameFamily ORDER BY Family");
+    var themes = db.Query("SELECT ThemeID, ThemeName FROM Theme ORDER BY ThemeName");
+
+    string message = "";
+    bool success = false;
+
+    if (IsPost)
+    {
+        string name = Request["Name"];
+        string description = Request["Description"];
+        int year = Convert.ToInt32(Request["Year"]);
+        int minPlayers = Convert.ToInt32(Request["MinPlayers"]);
+        int maxPlayers = Convert.ToInt32(Request["MaxPlayers"]);
+        int playtime = Convert.ToInt32(Request["Playtime"]);
+        string familyCode = Request["FamilyCode"];
+        string themeId = Request["ThemeID"];
+        string newTheme = Request["NewTheme"];
+        string imagePath = Request["ImagePath"];
+
+        // ---- D Level logic: handle new theme creation ----
+        if (!String.IsNullOrEmpty(newTheme))
+        {
+            // Check if theme already exists
+            var existingTheme = db.QueryValue("SELECT ThemeID FROM Theme WHERE ThemeName = @0", newTheme);
+            if (existingTheme == null)
+            {
+                // Generate new ThemeID
+                string newThemeId = Guid.NewGuid().ToString().Substring(0, 6);
+                db.Execute("INSERT INTO Theme (ThemeID, ThemeName) VALUES (@0, @1)", newThemeId, newTheme);
+                themeId = newThemeId;
+            }
+            else
+            {
+                themeId = existingTheme;
+            }
+        }
+
+        try
+        {
+            db.Execute(@"INSERT INTO BoardGame 
+                (Name, Description, YearPublished, MinPlayers, MaxPlayers, MfgPlaytime, FamilyCode, ImagePath)
+                VALUES (@0, @1, @2, @3, @4, @5, @6, @7)",
+                name, description, year, minPlayers, maxPlayers, playtime, familyCode, imagePath);
+
+            // (Optional) link theme to the game (if theme selected)
+            if (!String.IsNullOrEmpty(themeId))
+            {
+                var newId = db.QueryValue("SELECT TOP 1 BGGId FROM BoardGame ORDER BY BGGId DESC");
+                db.Execute("INSERT INTO GameInThemes (BGGId, ThemeID) VALUES (@0, @1)", newId, themeId);
+            }
+
+            message = "✅ Game added successfully!";
+            success = true;
+        }
+        catch (Exception ex)
+        {
+            message = "❌ Error while adding game: " + ex.Message;
+        }
+    }
+}
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">🆕 Add New Board Game</h2>
+
+    @if (!String.IsNullOrEmpty(message))
+    {
+        <div class="alert @(success ? "alert-success" : "alert-danger")">@message</div>
+    }
+
+    <form method="post" class="needs-validation" novalidate>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Game Name *</label>
+                <input type="text" name="Name" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Year Published *</label>
+                <input type="number" name="Year" min="1900" max="2100" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Playtime (mins)</label>
+                <input type="number" name="Playtime" min="0" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Min Players *</label>
+                <input type="number" name="MinPlayers" min="1" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Max Players *</label>
+                <input type="number" name="MaxPlayers" min="1" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Game Family</label>
+                <select name="FamilyCode" class="form-select">
+                    <option value="">-- Select Family --</option>
+                    @foreach (var f in families)
+                    {
+                        <option value="@f.FamilyCode">@f.Family</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Select Theme</label>
+                <select name="ThemeID" class="form-select">
+                    <option value="">-- Select Theme --</option>
+                    @foreach (var t in themes)
+                    {
+                        <option value="@t.ThemeID">@t.ThemeName</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Or Add New Theme</label>
+                <input type="text" name="NewTheme" class="form-control" placeholder="Enter new theme name">
+            </div>
+
+            <div class="col-md-12">
+                <label class="form-label">Description *</label>
+                <textarea name="Description" rows="4" class="form-control" required></textarea>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Image Path (URL)</label>
+                <input type="text" name="ImagePath" class="form-control" placeholder="/images/sample.jpg">
+            </div>
+        </div>
+
+        <div class="mt-4 text-center">
+            <button type="submit" class="btn btn-primary px-4">Add Game</button>
+            <a href="/Home/Index" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(() => {
+    'use strict'
+    const forms = document.querySelectorAll('.needs-validation')
+    Array.from(forms).forEach(form => {
+        form.addEventListener('submit', event => {
+            if (!form.checkValidity()) {
+                event.preventDefault()
+                event.stopPropagation()
+            }
+            form.classList.add('was-validated')
+        }, false)
+    })
+})()
+</script>
