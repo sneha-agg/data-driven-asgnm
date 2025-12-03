@@ -1,0 +1,88 @@
+@using WebMatrix.Data
+@{
+    Layout = "_Layout";
+    var db = Database.Open("BoardGame");
+
+    var gameId = Request["id"];
+
+    if (String.IsNullOrEmpty(gameId))
+    {
+        <div class="alert alert-danger text-center mt-5">Invalid Game ID.</div>;
+        return;
+    }
+
+    var game = db.QuerySingle("SELECT * FROM BoardGame WHERE BGGId = @0", gameId);
+
+    if (game == null)
+    {
+        <div class="alert alert-warning text-center mt-5">Game not found.</div>;
+        return;
+    }
+
+    var themeName = db.QueryValue(@"
+        SELECT T.ThemeName FROM GameInThemes GT
+        INNER JOIN Theme T ON GT.ThemeID = T.ThemeID
+        WHERE GT.BGGId = @0", gameId);
+
+    string message = "";
+    bool deleted = false;
+
+    if (IsPost)
+    {
+        try
+        {
+            // Delete from linking table first to prevent FK errors
+            db.Execute("DELETE FROM GameInThemes WHERE BGGId = @0", gameId);
+
+            // Then delete the game
+            db.Execute("DELETE FROM BoardGame WHERE BGGId = @0", gameId);
+
+            deleted = true;
+            message = "🗑️ Game deleted successfully! Redirecting...";
+        }
+        catch (Exception ex)
+        {
+            message = "⚠ Error deleting game: " + ex.Message;
+        }
+    }
+}
+
+<div class="container mt-5">
+    @if (!deleted)
+    {
+        <div class="card shadow-sm rounded-3">
+            <div class="card-body">
+
+                <h3 class="text-center text-danger mb-4">Delete Game?</h3>
+
+                <p class="text-center">Are you sure you want to delete:</p>
+
+                <div class="text-center mb-3">
+                    <strong>@game.Name</strong><br />
+                    @if (!String.IsNullOrEmpty(themeName))
+                    {
+                        <span class="text-muted small">Theme: @themeName</span>
+                    }
+                </div>
+
+                @if (!String.IsNullOrEmpty(message))
+                {
+                    <div class="alert alert-danger">@message</div>
+                }
+
+                <form method="post" class="text-center">
+                    <button type="submit" class="btn btn-danger px-4">Delete</button>
+                    <a href="/Home/Details?id=@gameId" class="btn btn-secondary ms-2">Cancel</a>
+                </form>
+
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-success text-center">@message</div>
+        <script>
+            setTimeout(() => { window.location = '/Home/Index'; }, 1600);
+        </script>
+    }
+</div>

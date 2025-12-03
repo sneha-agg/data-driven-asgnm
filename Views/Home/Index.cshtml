@@ -3,116 +3,109 @@
     Layout = "_Layout";
     var db = Database.Open("BoardGame");
 
-    // Get user inputs
     string search = Request["search"];
-    string viewMode = Request["view"] ?? "table"; // Default: table
-    string selectedCategory = Request["category"];
+    string selectedTheme = Request["theme"];
+    string viewMode = Request["view"] ?? "table";
 
-    // Load category options
-    var categories = db.Query("SELECT DISTINCT Category FROM Category ORDER BY Category");
+    // Theme dropdown
+    var themes = db.Query("SELECT ThemeID, ThemeName FROM Theme ORDER BY ThemeName");
 
-    // Build SQL query
-    string sql = "SELECT * FROM BoardGame WHERE 1=1";
+    // Base SQL with JOIN to get theme + family names
+    string sql = @"
+        SELECT BG.*, 
+        T.ThemeName,
+        F.Family
+        FROM BoardGame BG
+        LEFT JOIN GameInThemes GT ON BG.BGGId = GT.BGGId
+        LEFT JOIN Theme T ON GT.ThemeID = T.ThemeID
+        LEFT JOIN GameFamily F ON BG.FamilyCode = F.FamilyCode
+        WHERE 1=1";
 
-    if (!String.IsNullOrEmpty(search))
+    var parameters = new List<object>();
+
+    if (!String.IsNullOrWhiteSpace(search))
     {
-        sql += " AND Name LIKE @0";
+        sql += " AND BG.Name LIKE @0";
+        parameters.Add("%" + search + "%");
     }
 
-    if (!String.IsNullOrEmpty(selectedCategory))
+    if (!String.IsNullOrWhiteSpace(selectedTheme))
     {
-        sql += " AND BGGId IN (SELECT BGGId FROM GameCategory WHERE Category = @1)";
+        sql += (parameters.Count == 0)
+            ? " AND T.ThemeID = @0"
+            : " AND T.ThemeID = @" + parameters.Count;
+        parameters.Add(selectedTheme);
     }
 
-    sql += " ORDER BY Name";
+    sql += " ORDER BY BG.Name";
 
-    var games = db.Query(sql, "%" + search + "%", selectedCategory);
+    var games = db.Query(sql, parameters.ToArray());
 }
-<link rel="stylesheet" href="~/css/site.css" />
-
 
 <div class="container mt-4">
-    <h2 class="text-center mb-4">Board Game Collection</h2>
 
-    <form method="get" class="row mb-3 g-2">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Board Game Collection</h2>
+        <a href="/Home/Create" class="btn btn-success">+ Add Game</a>
+    </div>
+
+    <!-- Filter Form -->
+    <form method="get" class="row g-2 mb-3">
         <div class="col-md-4">
             <input type="text" name="search" value="@search" class="form-control" placeholder="Search by name..." />
         </div>
-
         <div class="col-md-3">
-            <select name="category" class="form-select">
-                <option value="">All Categories</option>
-                @foreach (var cat in categories)
+            <select name="theme" class="form-select">
+                <option value="">All Themes</option>
+                @foreach (var t in themes)
                 {
-                    <option value="@cat.Category" @(cat.Category == selectedCategory ? "selected" : "")>
-                        @cat.Category
+                    <option value="@t.ThemeID" @(t.ThemeID == selectedTheme ? "selected" : "")>
+                        @t.ThemeName
                     </option>
                 }
             </select>
         </div>
-
         <div class="col-md-3">
             <select name="view" class="form-select">
                 <option value="table" @(viewMode == "table" ? "selected" : "")>Table View</option>
                 <option value="card" @(viewMode == "card" ? "selected" : "")>Card View</option>
             </select>
         </div>
-
-        <div class="col-md-2 text-end">
-            <button class="btn btn-primary w-100" type="submit">Apply</button>
+        <div class="col-md-2">
+            <button class="btn btn-primary w-100" type="submit">Filter</button>
         </div>
     </form>
 
-    @if (viewMode == "table")
+    @if (!games.Any())
     {
-        <!-- Table Layout -->
-        <table class="table table-striped table-hover align-middle">
-            <thead class="table-dark">
-                <tr>
-                    <th>Image</th>
-                    <th>Name</th>
-                    <th>Year</th>
-                    <th>Players</th>
-                    <th>Playtime</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var g in games)
-                {
-                    <tr>
-                        <td>
-                            <img src="@g.ImagePath" width="80" height="80" class="rounded shadow-sm" />
-                        </td>
-                        <td>@g.Name</td>
-                        <td>@g.YearPublished?.ToString("yyyy")</td>
-                        <td>@g.MinPlayers - @g.MaxPlayers</td>
-                        <td>@g.MfgPlaytime mins</td>
-                        <td>
-                            <a href="/Home/Details?id=@g.BGGId" class="btn btn-sm btn-outline-primary">Details</a>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <div class="alert alert-warning text-center">
+            No games found.
+        </div>
     }
-    else
+    else if (viewMode == "card")
     {
-        <!-- Card Layout -->
+        <!-- Card View -->
         <div class="row row-cols-1 row-cols-md-3 g-4">
             @foreach (var g in games)
             {
+                string img = String.IsNullOrWhiteSpace(g.ImagePath)
+                    ? "/images/noimage.png" : g.ImagePath;
+
+                string desc = String.IsNullOrEmpty(g.Description)
+                    ? "No description available."
+                    : g.Description.Length > 120 ? g.Description.Substring(0, 120) + "..." : g.Description;
+
                 <div class="col">
-                    <div class="card shadow-sm h-100">
-                        <img src="@g.ImagePath" class="card-img-top" alt="@g.Name" style="height:220px; object-fit:cover;">
+                    <div class="card h-100 shadow-sm">
+                        <img src="@img" class="card-img-top" style="height:220px; object-fit:cover;">
                         <div class="card-body">
-                            <h5 class="card-title">@g.Name</h5>
-                            <p class="card-text text-muted">@g.Description.Substring(0, Math.Min(120, g.Description.Length))...</p>
-                            <ul class="list-unstyled small">
-                                <li><strong>Players:</strong> @g.MinPlayers - @g.MaxPlayers</li>
-                                <li><strong>Year:</strong> @g.YearPublished?.ToString("yyyy")</li>
-                                <li><strong>Playtime:</strong> @g.MfgPlaytime mins</li>
-                            </ul>
+                            <h5>@g.Name</h5>
+                            <p class="text-muted small">@desc</p>
+                            <p class="small">
+                                <strong>Players:</strong> @g.MinPlayers-@g.MaxPlayers |
+                                <strong>Year:</strong> @g.YearPublished |
+                                <strong>Theme:</strong> @g.ThemeName
+                            </p>
                         </div>
                         <div class="card-footer text-center bg-light">
                             <a href="/Home/Details?id=@g.BGGId" class="btn btn-outline-primary btn-sm">Details</a>
@@ -121,5 +114,42 @@
                 </div>
             }
         </div>
+    }
+    else
+    {
+        <!-- Table View -->
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Image</th>
+                    <th>Name</th>
+                    <th>Theme</th>
+                    <th>Players</th>
+                    <th>Year</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var g in games)
+                {
+                    string img = String.IsNullOrWhiteSpace(g.ImagePath)
+                        ? "/images/noimage.png" : g.ImagePath;
+
+                    <tr>
+                        <td><img src="@img" width="65" height="65" class="rounded"></td>
+                        <td>@g.Name</td>
+                        <td>@(g.ThemeName ?? "-")</td>
+                        <td>@g.MinPlayers-@g.MaxPlayers</td>
+                        <td>@g.YearPublished</td>
+                        <td>
+                            <a href="/Home/Details?id=@g.BGGId" class="btn btn-sm btn-info text-white">View</a>
+                            <a href="/Home/Edit?id=@g.BGGId" class="btn btn-sm btn-warning">Edit</a>
+                            <a href="/Home/Delete?id=@g.BGGId" class="btn btn-sm btn-danger"
+                               onclick="return confirm('Delete this game?');">Delete</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 </div>
