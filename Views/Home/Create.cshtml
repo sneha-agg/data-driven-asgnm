@@ -1,6 +1,8 @@
 @using WebMatrix.Data
 @{
+    ViewData["Title"] = "Add New Board Game";
     Layout = "_Layout";
+
     var db = Database.Open("BoardGame");
 
     var families = db.Query("SELECT FamilyCode, Family FROM GameFamily ORDER BY Family");
